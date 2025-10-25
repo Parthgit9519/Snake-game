@@ -937,7 +937,7 @@
         // --- NEW METHOD: Update game speed and CSS animation var ---
         updateGameSpeed() {
           const speed = this.difficulties[this.currentDifficulty].speed;
-          
+
           // Set CSS var for transition. Make it slightly longer than the tick.
           document.documentElement.style.setProperty(
             "--snake-transition-speed",
@@ -1206,7 +1206,7 @@
         drawCell(x, y, className, direction = null) {
           const cell = document.createElement("div");
           cell.className = `cell ${className}`;
-          
+
           // --- IMPROVED FUNCTIONING: Use dynamic cell size ---
           cell.style.left = `${x * this.CELL_SIZE}px`;
           cell.style.top = `${y * this.CELL_SIZE}px`;
