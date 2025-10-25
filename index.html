@@ -26,9 +26,14 @@
         --border: #475569;
         --shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.4);
+
+        /* --- Board Dimensions --- */
         --cell-size: 20px;
         --board-cols: 25;
         --board-rows: 20;
+
+        /* --- Animation Speed (Set by JS) --- */
+        --snake-transition-speed: 140ms;
       }
 
       * {
@@ -238,7 +243,8 @@
         position: absolute;
         width: var(--cell-size);
         height: var(--cell-size);
-        transition: all 0.1s ease;
+        /* --- IMPROVED ANIMATION --- */
+        transition: all var(--snake-transition-speed) ease-in-out;
       }
       .snake {
         background: linear-gradient(135deg, var(--secondary), #059669);
@@ -251,7 +257,58 @@
         transform: scale(1.1);
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
         z-index: 2;
+        position: relative;
       }
+
+      /* --- IMPROVED UI: Snake Eyes --- */
+      .snake.head::before,
+      .snake.head::after {
+        content: "";
+        position: absolute;
+        width: 4px;
+        height: 4px;
+        background: var(--bg-primary);
+        border: 1px solid var(--text-primary);
+        border-radius: 50%;
+        transition: all 0.1s ease;
+      }
+      /* Eyes default to 'right' */
+      .snake.head[data-direction="right"]::before,
+      .snake.head::before {
+        top: 3px;
+        right: 4px;
+      }
+      .snake.head[data-direction="right"]::after,
+      .snake.head::after {
+        bottom: 3px;
+        right: 4px;
+      }
+      .snake.head[data-direction="left"]::before {
+        top: 3px;
+        left: 4px;
+      }
+      .snake.head[data-direction="left"]::after {
+        bottom: 3px;
+        left: 4px;
+      }
+      .snake.head[data-direction="up"]::before {
+        top: 4px;
+        left: 3px;
+      }
+      .snake.head[data-direction="up"]::after {
+        top: 4px;
+        right: 3px;
+      }
+      .snake.head[data-direction="down"]::before {
+        bottom: 4px;
+        left: 3px;
+      }
+      .snake.head[data-direction="down"]::after {
+        bottom: 4px;
+        right: 3px;
+      }
+      /* --- End Snake Eyes --- */
+
       .food {
         background: linear-gradient(135deg, var(--danger), #dc2626);
         border-radius: 50%;
@@ -589,8 +646,8 @@
         }
 
         initializeGame() {
-          this.COLS = 25;
-          this.ROWS = 20;
+          // --- IMPROVED FUNCTIONING: Read board dimensions from CSS ---
+          this.updateBoardDimensions();
 
           this.difficulties = {
             easy: { speed: 200, name: "Easy" },
@@ -600,11 +657,16 @@
           };
 
           this.currentDifficulty = "medium";
+
+          // --- IMPROVED FUNCTIONING: Center snake on dynamic board ---
+          const startX = Math.floor(this.COLS / 2);
+          const startY = Math.floor(this.ROWS / 2);
           this.snake = [
-            { x: 12, y: 10 },
-            { x: 11, y: 10 },
-            { x: 10, y: 10 },
+            { x: startX, y: startY },
+            { x: startX - 1, y: startY },
+            { x: startX - 2, y: startY },
           ];
+
           this.direction = { x: 1, y: 0 };
           this.nextDirection = { ...this.direction };
           this.food = null;
@@ -616,6 +678,7 @@
           this.gameState = "ready";
           this.gameInterval = null;
           this.muted = false;
+          this.resizeTimeout = null;
 
           this.elements = {
             board: document.getElementById("gameBoard"),
@@ -639,6 +702,18 @@
           this.spawnFood();
           this.updateUI();
           this.render();
+          this.updateGameSpeed(); // Set initial transition speed
+        }
+
+        // --- NEW METHOD: Read CSS variables for responsive logic ---
+        updateBoardDimensions() {
+          const rootStyles = getComputedStyle(document.documentElement);
+          this.CELL_SIZE =
+            parseInt(rootStyles.getPropertyValue("--cell-size").trim()) || 20;
+          this.COLS =
+            parseInt(rootStyles.getPropertyValue("--board-cols").trim()) || 25;
+          this.ROWS =
+            parseInt(rootStyles.getPropertyValue("--board-rows").trim()) || 20;
         }
 
         initializeAudio() {
@@ -758,6 +833,31 @@
           };
           document.addEventListener("click", unlockAudio, { once: true });
           document.addEventListener("keydown", unlockAudio, { once: true });
+
+          // --- NEW: Add resize listener ---
+          window.addEventListener("resize", () => this.handleResize());
+        }
+
+        // --- NEW METHOD: Handle window resizing ---
+        handleResize() {
+          clearTimeout(this.resizeTimeout);
+          this.resizeTimeout = setTimeout(() => {
+            const oldCols = this.COLS;
+            const oldRows = this.ROWS;
+            this.updateBoardDimensions();
+
+            // If dimensions changed, force a reset
+            if (oldCols !== this.COLS || oldRows !== this.ROWS) {
+              if (this.gameState === "playing") {
+                this.togglePause();
+              }
+              this.restartGame();
+              this.showOverlay(
+                "Game Resized",
+                "Board size changed. Press Start."
+              );
+            }
+          }, 300);
         }
 
         handleKeyPress(e) {
@@ -829,18 +929,36 @@
             );
           });
 
+          // --- IMPROVED ANIMATION: Update speed var ---
+          this.updateGameSpeed();
           this.sounds.click();
         }
 
-        startGame() {
-          this.gameState = "playing";
-          this.hideOverlay();
-          this.gameInterval = setInterval(
-            () => this.gameLoop(),
-            this.difficulties[this.currentDifficulty].speed
+        // --- NEW METHOD: Update game speed and CSS animation var ---
+        updateGameSpeed() {
+          const speed = this.difficulties[this.currentDifficulty].speed;
+          
+          // Set CSS var for transition. Make it slightly longer than the tick.
+          document.documentElement.style.setProperty(
+            "--snake-transition-speed",
+            `${speed * 1.1}ms` // e.g., 140ms -> 154ms
           );
-          this.updateButtons();
-          this.sounds.click();
+
+          // Clear old interval and set new one if playing
+          if (this.gameState === "playing") {
+            clearInterval(this.gameInterval);
+            this.gameInterval = setInterval(() => this.gameLoop(), speed);
+          }
+        }
+
+        startGame() {
+          if (this.gameState === "ready") {
+            this.gameState = "playing";
+            this.hideOverlay();
+            this.updateGameSpeed(); // This now sets the interval
+            this.updateButtons();
+            this.sounds.click();
+          }
         }
 
         togglePause() {
@@ -854,10 +972,7 @@
           } else if (this.gameState === "paused") {
             this.gameState = "playing";
             this.hideOverlay();
-            this.gameInterval = setInterval(
-              () => this.gameLoop(),
-              this.difficulties[this.currentDifficulty].speed
-            );
+            this.updateGameSpeed(); // This now sets the interval
           }
 
           this.updateButtons();
@@ -868,11 +983,16 @@
           this.gameState = "ready";
           clearInterval(this.gameInterval);
 
+          // --- IMPROVED FUNCTIONING: Re-read dimensions on restart ---
+          this.updateBoardDimensions();
+          const startX = Math.floor(this.COLS / 2);
+          const startY = Math.floor(this.ROWS / 2);
           this.snake = [
-            { x: 12, y: 10 },
-            { x: 11, y: 10 },
-            { x: 10, y: 10 },
+            { x: startX, y: startY },
+            { x: startX - 1, y: startY },
+            { x: startX - 2, y: startY },
           ];
+
           this.direction = { x: 1, y: 0 };
           this.nextDirection = { ...this.direction };
           this.score = 0;
@@ -1063,19 +1183,39 @@
           }
 
           this.snake.forEach((segment, index) => {
+            // --- IMPROVED UI: Pass direction to drawCell ---
             this.drawCell(
               segment.x,
               segment.y,
-              index === 0 ? "snake head" : "snake"
+              index === 0 ? "snake head" : "snake",
+              index === 0 ? this.direction : null
             );
           });
         }
 
-        drawCell(x, y, className) {
+        // --- NEW METHOD: Helper to get direction name for CSS ---
+        getDirectionName(direction) {
+          if (direction.x === 1) return "right";
+          if (direction.x === -1) return "left";
+          if (direction.y === 1) return "down";
+          if (direction.y === -1) return "up";
+          return "right"; // Default
+        }
+
+        // --- UPDATED METHOD: Use this.CELL_SIZE and add direction attribute ---
+        drawCell(x, y, className, direction = null) {
           const cell = document.createElement("div");
           cell.className = `cell ${className}`;
-          cell.style.left = `${x * 20}px`;
-          cell.style.top = `${y * 20}px`;
+          
+          // --- IMPROVED FUNCTIONING: Use dynamic cell size ---
+          cell.style.left = `${x * this.CELL_SIZE}px`;
+          cell.style.top = `${y * this.CELL_SIZE}px`;
+
+          // --- IMPROVED UI: Set data-direction for snake head eyes ---
+          if (className.includes("head") && direction) {
+            cell.dataset.direction = this.getDirectionName(direction);
+          }
+
           this.elements.board.appendChild(cell);
         }
 
